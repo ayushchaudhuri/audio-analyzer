@@ -8,6 +8,7 @@ from pathlib import Path
 import tempfile
 import os
 import mimetypes
+from typing import Optional
 from pydantic import BaseModel
 import logging
 from dotenv import load_dotenv
@@ -50,26 +51,43 @@ class AnalysisResult(BaseModel):
     bpm: float
     key: str
     keyConfidence: float
-    loudness: float
     duration: float
     duration_formatted: str
-    artist: str | None = None
-    title: str | None = None
+    loudness: float
+    title: Optional[str] = None
+    artist: Optional[str] = None
 
-def get_audio_metadata(file_path: str) -> tuple[str | None, str | None]:
-    """Extract artist and title from audio file metadata."""
-    audio = File(file_path)
-    if audio is None:
-        return None, None
-    
-    if hasattr(audio, 'tags'):
-        if hasattr(audio.tags, 'get'):
-            artist = audio.tags.get('artist', [None])[0]
-            title = audio.tags.get('title', [None])[0]
-        else:
-            artist = getattr(audio.tags, 'artist', [None])[0] if hasattr(audio.tags, 'artist') else None
-            title = getattr(audio.tags, 'title', [None])[0] if hasattr(audio.tags, 'title') else None
-        return artist, title
+def get_audio_metadata(file_path: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract metadata from audio file."""
+    try:
+        audio = File(file_path)
+        if audio is None:
+            return None, None
+            
+        # Try to get metadata
+        if hasattr(audio, 'tags'):
+            artist = None
+            title = None
+            
+            # ID3 tags (MP3)
+            if hasattr(audio.tags, 'getall'):
+                artist_frames = audio.tags.getall('TPE1')
+                if artist_frames:
+                    artist = str(artist_frames[0])
+                
+                title_frames = audio.tags.getall('TIT2')
+                if title_frames:
+                    title = str(title_frames[0])
+            
+            # Other formats
+            else:
+                artist = audio.tags.get('artist', [None])[0]
+                title = audio.tags.get('title', [None])[0]
+            
+            return artist, title
+    except Exception as e:
+        logger.error(f"Error extracting metadata: {e}")
+        
     return None, None
 
 def get_duration(y: np.ndarray, sr: int) -> float:
